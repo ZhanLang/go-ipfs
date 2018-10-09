@@ -14,15 +14,16 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/ipfs/go-ipfs/core"
-	coreiface "github.com/ipfs/go-ipfs/core/coreapi/interface"
-	"github.com/ipfs/go-ipfs/dagutils"
 	ft "gx/ipfs/QmQDcPcBH8nfz3JB4K4oEvxhRmBwCrMgvG966XpExEWexf/go-unixfs"
 	"gx/ipfs/QmQDcPcBH8nfz3JB4K4oEvxhRmBwCrMgvG966XpExEWexf/go-unixfs/importer"
 	uio "gx/ipfs/QmQDcPcBH8nfz3JB4K4oEvxhRmBwCrMgvG966XpExEWexf/go-unixfs/io"
 	path "gx/ipfs/QmQmMu1vsgsjxyB8tzrA6ZTCTCLDLVaXMb4Q57r2v886Sx/go-path"
 	resolver "gx/ipfs/QmQmMu1vsgsjxyB8tzrA6ZTCTCLDLVaXMb4Q57r2v886Sx/go-path/resolver"
 	dag "gx/ipfs/QmXTw4By9FMZAt7qJm4JoJuNBrBgqMMzkS4AjKc4zqTUVd/go-merkledag"
+
+	core "github.com/ipfs/go-ipfs/core"
+	coreiface "github.com/ipfs/go-ipfs/core/coreapi/interface"
+	"github.com/ipfs/go-ipfs/dagutils"
 
 	humanize "gx/ipfs/QmPSBJL4momYnE7DcUyk2DVhD6rH488ZmHBGLbxNdhU44K/go-humanize"
 	cid "gx/ipfs/QmPSQnBKM9g7BaUcZCvswUJVscQ1ipjmwxN5PXCjkp9EQ7/go-cid"
@@ -178,14 +179,12 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 		return
 	}
 
-	dr, err := i.api.Unixfs().Cat(ctx, resolvedPath)
-	dir := false
+	dr, err := i.api.Unixfs().Get(ctx, resolvedPath)
+	dir := dr.IsDirectory()
 	switch err {
 	case nil:
 		// Cat() worked
 		defer dr.Close()
-	case coreiface.ErrIsDir:
-		dir = true
 	default:
 		webError(w, "ipfs cat "+escapedURLPath, err, http.StatusNotFound)
 		return
@@ -270,7 +269,7 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 		} else {
 			name = getFilename(urlPath)
 		}
-		i.serveFile(w, r, name, modtime, dr)
+		i.serveFile(w, r, name, modtime, dr.(io.ReadSeeker))
 		return
 	}
 
@@ -297,7 +296,7 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 			return
 		}
 
-		dr, err := i.api.Unixfs().Cat(ctx, coreiface.IpfsPath(ixnd.Cid()))
+		dr, err := i.api.Unixfs().Get(ctx, coreiface.IpfsPath(ixnd.Cid()))
 		if err != nil {
 			internalWebError(w, err)
 			return
@@ -305,7 +304,7 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 		defer dr.Close()
 
 		// write to request
-		http.ServeContent(w, r, "index.html", modtime, dr)
+		http.ServeContent(w, r, "index.html", modtime, dr.(io.ReadSeeker))
 		return
 	default:
 		internalWebError(w, err)

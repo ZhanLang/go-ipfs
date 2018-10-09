@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-ipfs/core/coreapi/interface"
 
 	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit"
+	"gx/ipfs/QmSP88ryZkHSRn1fnngAaV2Vcn63WUJzAavnRM9CVdU1Ky/go-ipfs-cmdkit/files"
 	cmds "gx/ipfs/QmXTmUCBtDUrzDYVzASogLiNph7EBuYqEgPL7QoHNMzUnz/go-ipfs-cmds"
 )
 
@@ -123,6 +124,12 @@ var CatCmd = &cmds.Command{
 	},
 }
 
+type catFile interface {
+	files.SizeFile
+
+	io.Seeker
+}
+
 func cat(ctx context.Context, api iface.CoreAPI, paths []string, offset int64, max int64) ([]io.Reader, uint64, error) {
 	readers := make([]io.Reader, 0, len(paths))
 	length := uint64(0)
@@ -135,32 +142,46 @@ func cat(ctx context.Context, api iface.CoreAPI, paths []string, offset int64, m
 			return nil, 0, err
 		}
 
-		read, err := api.Unixfs().Cat(ctx, fpath)
+		f, err := api.Unixfs().Get(ctx, fpath)
 		if err != nil {
 			return nil, 0, err
 		}
-		if offset > int64(read.Size()) {
-			offset = offset - int64(read.Size())
+
+		file := f.(catFile)
+
+		fsize, err := file.Size()
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if offset > fsize {
+			offset = offset - fsize
 			continue
 		}
-		count, err := read.Seek(offset, io.SeekStart)
+
+		count, err := file.Seek(offset, io.SeekStart)
 		if err != nil {
 			return nil, 0, err
 		}
 		offset = 0
 
-		size := uint64(read.Size() - uint64(count))
+		fsize, err = file.Size()
+		if err != nil {
+			return nil, 0, err
+		}
+
+		size := uint64(fsize - count)
 		length += size
 		if max > 0 && length >= uint64(max) {
-			var r io.Reader = read
+			var r io.Reader = file
 			if overshoot := int64(length - uint64(max)); overshoot != 0 {
-				r = io.LimitReader(read, int64(size)-overshoot)
+				r = io.LimitReader(file, int64(size)-overshoot)
 				length = uint64(max)
 			}
 			readers = append(readers, r)
 			break
 		}
-		readers = append(readers, read)
+		readers = append(readers, file)
 	}
 	return readers, length, nil
 }
