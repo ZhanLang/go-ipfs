@@ -180,11 +180,13 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 	}
 
 	dr, err := i.api.Unixfs().Get(ctx, resolvedPath)
-	dir := dr.IsDirectory()
-	switch err {
-	case nil:
-		// Cat() worked
-		defer dr.Close()
+	dir := false
+	switch {
+	case err == nil:
+		dir = dr.IsDirectory()
+		if !dir {
+			defer dr.Close()
+		}
 	default:
 		webError(w, "ipfs cat "+escapedURLPath, err, http.StatusNotFound)
 		return
@@ -371,7 +373,7 @@ func (i *gatewayHandler) getOrHeadHandler(ctx context.Context, w http.ResponseWr
 }
 
 type sizeReadSeeker interface {
-	Size() uint64
+	Size() (int64, error)
 
 	io.ReadSeeker
 }
@@ -382,7 +384,7 @@ type sizeSeeker struct {
 
 func (s *sizeSeeker) Seek(offset int64, whence int) (int64, error) {
 	if whence == io.SeekEnd && offset == 0 {
-		return int64(s.Size()), nil
+		return s.Size()
 	}
 
 	return s.sizeReadSeeker.Seek(offset, whence)
